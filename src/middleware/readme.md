@@ -1,0 +1,4 @@
+--El middleware sirve para conectar la aplicacion con la info
+--valida la info antes de q llegue
+-envia respuestas al cliente
+-despues del cliente se la envia a una funcion distinta
