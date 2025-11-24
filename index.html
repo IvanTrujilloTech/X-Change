@@ -4,10 +4,27 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>X-Change</title>
 </head>
 <body>
-    <h1>Hello World</h1>
-    
+    <h1>X-Change</h1>
+    <p>Para obtener un token de acceso, inicia sesión con GitHub:</p>
+    <a href="/auth/github">Iniciar sesión con GitHub</a>
+    <div id="tokenDisplay" style="margin-top: 20px;"></div>
+
+    <script>
+        // check for token in URL (from callback)
+        const urlParams = new URLSearchParams(window.location.search);
+        const tokenFromUrl = urlParams.get('token');
+        if (tokenFromUrl) {
+            document.getElementById('tokenDisplay').innerHTML = `
+                <p><strong>Access Token:</strong></p>
+                <textarea readonly style="width: 100%; height: 100px;">${tokenFromUrl}</textarea>
+                <p>Copia este token para usar en Postman con Authorization: Bearer <token></p>
+            `;
+            // clean URL
+            window.history.replaceState({}, document.title, '/');
+        }
+    </script>
 </body>
 </html>

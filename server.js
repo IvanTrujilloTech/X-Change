@@ -1,19 +1,27 @@
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
-const cors = require('cors'); 
+const cors = require('cors');
+const jwt = require('jsonwebtoken');
+require('dotenv').config();
 
 const app = express();
 const PORT = 3000;
 
 // configuracion de supabase
 // url de proyecto supabase:
-const supabaseUrl = 'https://jleeuizmswmchhrsvrbs.supabase.co'; 
+const supabaseUrl = 'https://jleeuizmswmchhrsvrbs.supabase.co';
 
-// clave publica (publishable key)
-const supabaseAnonKey = 'sb_publishable_qGfF4I4xocv9fxzwxplMQA_-meWzU0u'; 
+// clave anonima (anon key) para autenticacion
+const supabaseAnonKey = 'sb_publishable_qGfF4I4xocv9fxzwxplMQA_-meWzU0u';
 
-// inicializacion de cliente supabase
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// clave de servicio (service role key) para operaciones de base de datos
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+// inicializacion de cliente supabase para autenticacion
+const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey);
+
+// inicializacion de cliente supabase para base de datos con service role key
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 // middleware de express
 // habilito cors para desarrollo local
@@ -23,17 +31,13 @@ app.use(express.json());
 
 // ruta para iniciar login con github
 app.get('/auth/github', async (req, res) => {
-    // uso url temporal de supabase para ver token
-    // despues del login de github token jwt aparecera aqui para que lo copie para postman
-    const redirectTo = 'https://supabase.com/dashboard/auth/callback'; 
-    
     console.log('empezando flujo de oauth con github...');
 
     // llamo al servicio de autenticacion de supabase para empezar redireccion a github
-    const { data, error } = await supabase.auth.signInWithOAuth({
+    const { data, error } = await supabaseAuth.auth.signInWithOAuth({
         provider: 'github',
         options: {
-            redirectTo: redirectTo,
+            redirectTo: 'http://localhost:3000/auth/callback',
         },
     });
 
@@ -47,9 +51,46 @@ app.get('/auth/github', async (req, res) => {
     return res.redirect(data.url);
 });
 
+// ruta de callback para oauth
+app.get('/auth/callback', (req, res) => {
+    // Supabase envia el token en el hash fragment, no en query
+    // Servimos una pagina que extrae el token del hash y lo muestra
+    res.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OAuth Callback</title>
+</head>
+<body>
+    <h1>Procesando autenticacion...</h1>
+    <div id="result"></div>
+
+    <script>
+        const hash = window.location.hash.substring(1);
+        const params = new URLSearchParams(hash);
+        const accessToken = params.get('access_token');
+
+        if (accessToken) {
+            document.getElementById('result').innerHTML = \`
+                <p><strong>Access Token:</strong></p>
+                <textarea readonly style="width: 100%; height: 100px;">\${accessToken}</textarea>
+                <p>Copia este token para usar en Postman con Authorization: Bearer <token></p>
+                <p><a href="/">Volver a la pagina principal</a></p>
+            \`;
+        } else {
+            document.getElementById('result').innerHTML = '<p>Error: No se encontro el token de acceso.</p>';
+        }
+    </script>
+</body>
+</html>
+    `);
+});
+
 // middleware de autenticacion (requireauth)
 // funcion verifica si peticion tiene un token bearer jwt valido
-async function requireAuth(req, res, next) {
+function requireAuth(req, res, next) {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -58,17 +99,15 @@ async function requireAuth(req, res, next) {
 
     const token = authHeader.split(' ')[1]; // extraigo token la parte despues de bearer
 
-    // verifico token con supabase
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-
-    if (authError) {
-        console.error(`token invalido o expirado ${authError.message}`);
+    try {
+        // verifico token con jwt secret
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        next(); // permito que solicitud siga a ruta protegida
+    } catch (error) {
+        console.error(`token invalido o expirado ${error.message}`);
         return res.status(401).json({ error: 'token invalido o expirado vuelve a iniciar sesion' });
     }
-    
-    // si token es valido guardo objeto user en solicitud
-    req.user = user;
-    next(); // permito que solicitud siga a ruta protegida
 }
 
 
@@ -78,7 +117,7 @@ app.get('/api/datos/:tabla_nombre', requireAuth, async (req, res) => {
     const { tabla_nombre } = req.params; // obtengo el nombre de la tabla de la url
     const user = req.user; // obtengo usuario autenticado
 
-    console.log(`usuario ${user.id} solicitando datos de la tabla: ${tabla_nombre}`);
+    console.log(`usuario ${user.sub} solicitando datos de la tabla: ${tabla_nombre}`);
 
     // lista de tablas que permito exponer publicamente
     const tablas_permitidas = ['ofertas', 'documentos', 'paises', 'roles', 'solicitudes', 'usuarios', 'perfiles'];
@@ -99,17 +138,22 @@ app.get('/api/datos/:tabla_nombre', requireAuth, async (req, res) => {
         return res.status(500).json({ error: `error al consultar tabla ${tabla_nombre} detalles ${dbError.message}` });
     }
 
-    // exito 
-    res.json({ 
-        mensaje: `consulta exitosa a la tabla ${tabla_nombre} por ${user.email}`, 
-        usuario_id: user.id,
-        datos: datos 
+    // exito
+    res.json({
+        mensaje: `consulta exitosa a la tabla ${tabla_nombre} por ${user.email}`,
+        usuario_id: user.sub,
+        datos: datos
     });
 });
 
 
+// ruta para servir index.html
+app.get('/', (req, res) => {
+    res.sendFile(__dirname + '/index.html');
+});
+
 // inicio de servidor
 app.listen(PORT, () => {
     console.log(`servidor express corriendo en http://localhost:${PORT}`);
-    console.log(`para iniciar sesion con github voy a http://localhost:${PORT}/auth/github`);
+    console.log(`para iniciar sesion con github voy a http://localhost:${PORT}/auth/github o usa la pagina principal`);
 });
