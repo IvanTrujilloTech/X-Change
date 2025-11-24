@@ -1,4 +1,4 @@
-import { verifyToken } from '../config/jwt.js';
+import { verifyAccessToken as verifyToken } from '../config/jwt.js';
 import jwt from 'jsonwebtoken';
 export const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -12,13 +12,7 @@ export const authenticateToken = (req, res, next) => {
       message: 'Token requerido'
     });
   }
-jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-    if (err) {
-      return res.status(403).json({ message: 'Invalid or expired token' });
-    }
-    req.user = decoded;
-    next();
-  });
+
   try {
     const decoded = verifyToken(token);
     req.user = decoded;
@@ -26,7 +20,8 @@ jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
   } catch (error) {
     return res.status(403).json({
       success: false,
-      message: 'Token inválido o expirado'
+      message: 'Token inválido o expirado',
+      error: error.message
     });
   }
 };

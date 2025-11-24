@@ -1,20 +1,25 @@
 import jwt from 'jsonwebtoken';
 
-export const generateToken = (payload) => {
-  const secret = process.env.JWT_SECRET;
+export const generateAccessToken = (payload) => {
+  const secret = process.env.JWT_SECRET || 'secreto_default_para_pruebas';
   return jwt.sign(payload, secret, {
     expiresIn: '15m'
   });
 };
+
 export const generateRefreshToken = (payload) => {
-  return jwt.sign(payload, process.env.JWT_REFRESH_SECRET, {
-    expiresIn: '7d' // SIETE DIAS Q COJONESSS
+  const secret = process.env.JWT_REFRESH_SECRET || 'refresh_secreto_default';
+  return jwt.sign(payload, secret, {
+    expiresIn: '7d'
   });
 };
+
 export const verifyAccessToken = (token) => {
-  return jwt.verify(token, process.env.JWT_SECRET);
+  const secret = process.env.JWT_SECRET || 'secreto_default_para_pruebas';
+  return jwt.verify(token, secret);
 };
 
 export const verifyRefreshToken = (token) => {
-  return jwt.verify(token, process.env.JWT_REFRESH_SECRET);
+  const secret = process.env.JWT_REFRESH_SECRET || 'refresh_secreto_default';
+  return jwt.verify(token, secret);
 };
